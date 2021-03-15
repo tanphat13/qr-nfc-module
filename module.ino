@@ -6,6 +6,7 @@
 #include <SPI.h>
 #include <Adafruit_PN532.h>
 #include <HTTPClient.h>
+#include <esp_task_wdt.h>
 
 
 extern "C" {
@@ -22,6 +23,8 @@ extern "C" {
 #ifdef ESP32
 #include <SPIFFS.h>
 #endif
+
+#define WDT_TIMEOUT 20
 
 #define CO2_TX 1
 #define CO2_RX 3
@@ -138,16 +141,19 @@ void setup() {
   wifiManager.addParameter(&custom_http_server);
   wifiManager.addParameter(&custom_http_port);
   wifiManager.addParameter(&custom_secret_key);
+  wifiManager.setConnectTimeout(10);
 
   // Reset config for testing
   // wifiManager.resetSettings();
   
   if (!wifiManager.autoConnect(espChipId, "12345678")) {
     Serial.println("failed to connect and hit timeout");
-    delay(3000);
     ESP.restart();
-    delay(5000);
   }
+
+  esp_task_wdt_init(WDT_TIMEOUT, true);
+  esp_task_wdt_add(NULL);
+  
   strcpy(http_server, custom_http_server.getValue());
   strcpy(http_port, custom_http_port.getValue());
   strcpy(secret_key, custom_secret_key.getValue());
@@ -203,6 +209,7 @@ void loop() {
         payload = "{\"id\":" + qrCode + ", \"wins\": 3, \"losses\": 1, \"points_scored\": 12}";
         httpResponseCode = http.POST(payload);
         qrCode = "";
+        esp_task_wdt_reset();
         break;
       } else {
         qrCode += str;
@@ -215,7 +222,8 @@ void loop() {
       Serial.print("  UID Length: "); Serial.print(uidLength, DEC); Serial.println(" bytes");
       Serial.print("  UID Value: ");
       nfc.PrintHex(uid, uidLength);
-  
+      
+      esp_task_wdt_reset();
       if (uidLength == 4)
       {
         // We probably have a Mifare Classic card ...

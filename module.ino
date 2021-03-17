@@ -24,7 +24,7 @@ extern "C" {
 #include <SPIFFS.h>
 #endif
 
-#define WDT_TIMEOUT 20
+#define WDT_TIMEOUT 120
 
 #define CO2_TX 1
 #define CO2_RX 3
@@ -39,7 +39,7 @@ char espChipId[16];
 
 Adafruit_PN532 nfc(PN532_SCK, PN532_MISO, PN532_MOSI, PN532_SS);
 WiFiManager wifiManager;
-// String serverName = "http://178.128.121.231:3000/api/v1/stats";
+
 char http_server[40];
 char http_port[6];
 char secret_key[32];
@@ -56,13 +56,11 @@ void saveConfigCallback() {
 }
 
 void setupSpiffs(){
-  //clean FS, for testing
-  // SPIFFS.format();
 
   //read configuration from FS json
   Serial.println("mounting FS...");
 
-  if (SPIFFS.begin()) {
+  if (SPIFFS.begin(true)) {
     Serial.println("mounted file system");
     if (SPIFFS.exists("/config.json")) {
       //file exists, reading and loading
@@ -77,7 +75,6 @@ void setupSpiffs(){
         configFile.readBytes(buf.get(), size);
         DynamicJsonDocument jsonBuffer(1024);
         DeserializationError error = deserializeJson(jsonBuffer, buf.get());
-        // json.printTo(Serial);
         serializeJson(jsonBuffer, Serial);
         if (!error) {
           Serial.println("\nparsed json");
@@ -101,7 +98,9 @@ void setup() {
   // put your setup code here, to run once:
   WiFi.mode(WIFI_STA);
   Serial.begin(115200);
-  gtSerial.begin(9600); // software serial port
+  
+  // Software serial port
+  gtSerial.begin(9600);
   while (!Serial) delay(10);
 
   Serial.println("Hello!");
@@ -142,9 +141,6 @@ void setup() {
   wifiManager.addParameter(&custom_http_port);
   wifiManager.addParameter(&custom_secret_key);
   wifiManager.setConnectTimeout(10);
-
-  // Reset config for testing
-  // wifiManager.resetSettings();
   
   if (!wifiManager.autoConnect(espChipId, "12345678")) {
     Serial.println("failed to connect and hit timeout");
@@ -169,14 +165,11 @@ void setup() {
     if (!configFile) {
       Serial.println("failed to open config file for writing");
     }
-
-    // json.prettyPrintTo(Serial);
-    // json.printTo(configFile);
     
     serializeJsonPretty(jsonBuffer, Serial);
     serializeJson(jsonBuffer, configFile);
     configFile.close();
-    //end save
+    // End save
     shouldSaveConfig = false; 
   }
   Serial.println(WiFi.localIP());

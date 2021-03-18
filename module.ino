@@ -26,6 +26,8 @@ extern "C" {
 
 #define WDT_TIMEOUT 120
 
+#define BUTTON 2
+
 #define CO2_TX 1
 #define CO2_RX 3
 
@@ -47,12 +49,40 @@ char secret_key[32];
 String qrCode;
 long lastReconnectAttempt = 0;
 bool shouldSaveConfig = false;
+bool buttonState = LOW;
 
 SoftwareSerial gtSerial(CO2_RX, CO2_TX);
 
 void saveConfigCallback() {
   Serial.println("Saving config...");
   shouldSaveConfig = true;
+}
+
+void checkButton() {
+  if (debounceButton(buttonState) == HIGH && buttonState == LOW) {
+    Serial.println("Starting config portal");
+    wifiManager.setSaveConfigCallback(saveConfigCallback);
+    wifiManager.setConfigPortalTimeout(120);
+    buttonState = HIGH;      
+    if (!wifiManager.startConfigPortal(espChipId,"12345678")) {
+      Serial.println("failed to connect or hit timeout");
+      ESP.restart();
+    } else {
+      wifiManager.autoConnect();
+    }
+  }
+  else if (debounceButton(buttonState) == LOW && buttonState == HIGH) {
+    buttonState = LOW;
+  }
+}
+
+bool debounceButton(bool state) {
+  bool stateNow = digitalRead(BUTTON);
+  if (state != stateNow) {
+    delay(10);
+    stateNow = digitalRead(BUTTON);
+  }
+  return stateNow;
 }
 
 void setupSpiffs(){
@@ -80,7 +110,7 @@ void setupSpiffs(){
           Serial.println("\nparsed json");
 
           strcpy(http_server, jsonBuffer["http_server"]);
-          strcpy(http_port, jsonBuffer["htpp_port"]);
+          strcpy(http_port, jsonBuffer["http_port"]);
           strcpy(secret_key, jsonBuffer["secret_key"]);
           
           }
@@ -102,6 +132,7 @@ void setup() {
   // Software serial port
   gtSerial.begin(9600);
   while (!Serial) delay(10);
+  pinMode(BUTTON, INPUT);
 
   Serial.println("Hello!");
 
@@ -132,6 +163,7 @@ void setup() {
   sprintf(espChipId, "%lu", chipId);
 
   wifiManager.setSaveConfigCallback(saveConfigCallback);
+  wifiManager.setClass("invert");
 
   WiFiManagerParameter custom_http_server("server", "http server", http_server, 40);
   WiFiManagerParameter custom_http_port("port", "http port", http_port, 6);
@@ -240,4 +272,5 @@ void loop() {
     } else {
       Serial.println("WiFi Disconnected");  
     }
+    checkButton();
 }

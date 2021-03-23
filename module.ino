@@ -45,6 +45,7 @@ WiFiManager wifiManager;
 char http_server[40];
 char http_port[6];
 char secret_key[32];
+char connection_string[255];
 
 String qrCode;
 long lastReconnectAttempt = 0;
@@ -118,7 +119,7 @@ void setupSpiffs()
 				configFile.readBytes(buf.get(), size);
 				DynamicJsonDocument jsonBuffer(1024);
 				DeserializationError error = deserializeJson(jsonBuffer, buf.get());
-				serializeJson(jsonBuffer, Serial);
+				serializeJsonPretty(jsonBuffer, Serial);
 				if (!error)
 				{
 					Serial.println("\nparsed json");
@@ -126,6 +127,7 @@ void setupSpiffs()
 					strcpy(http_server, jsonBuffer["http_server"]);
 					strcpy(http_port, jsonBuffer["http_port"]);
 					strcpy(secret_key, jsonBuffer["secret_key"]);
+					strcpy(connection_string, jsonBuffer["connectionString"]);
 				}
 			}
 			else
@@ -139,6 +141,27 @@ void setupSpiffs()
 		Serial.println("failed to mount FS");
 	}
 	//end read
+}
+
+String getProvisioningConnectionString(String serverIp, uint16_t serverPort, String secretKey) {
+	HTTPClient http;
+	bool serverStatus = http.begin(serverIp, serverPort, "/module/iot-hub-registration");
+	http.addHeader("secret_key", secretKey);
+
+	String connectionString = "";
+
+	int httpResponse = http.GET();
+	if (httpResponse > 0) {
+		Serial.println("[HTTP] Status Code: "+ httpResponse);
+
+		if (httpResponse == HTTP_CODE_OK) { 
+			connectionString = http.getString();
+		}
+	} else {
+		Serial.println("[HTTP] GET... Failed, Error Code: " + httpResponse);
+	}
+	http.end();
+	return connectionString;
 }
 
 int postDataToServer(String serverIp, uint16_t serverPort, String secretKey, String data)
@@ -155,10 +178,9 @@ int postDataToServer(String serverIp, uint16_t serverPort, String secretKey, Str
 
 	String requestBody;
 	serializeJson(doc, requestBody);
-	int httpRes = http.POST(requestBody);
-	Serial.println(httpRes);
+	int httpResponse = http.POST(requestBody);
 	http.end();
-	return httpRes;
+	return httpResponse;
 }
 
 void setup()
@@ -234,19 +256,29 @@ void setup()
 	if (shouldSaveConfig)
 	{
 		Serial.println("saving config");
-		DynamicJsonDocument jsonBuffer(1024);
-		jsonBuffer["http_server"] = http_server;
-		jsonBuffer["http_port"] = http_port;
-		jsonBuffer["secret_key"] = secret_key;
-
+		DynamicJsonDocument doc(1024);
+		
+		if (connection_string[0] == '\0') {
+			String serverIp = String(http_server);
+			uint16_t serverPort = atoi(http_port);
+			String secretKey = String(secret_key);
+			String provisioning_connection_string = getProvisioningConnectionString(serverIp, serverPort, secretKey);
+			Serial.print("Provisioning Connection String: ");
+			Serial.println(provisioning_connection_string);
+			DeserializationError error = deserializeJson(doc, provisioning_connection_string);
+		}
+		doc["http_server"] = http_server;
+		doc["http_port"] = http_port;
+		doc["secret_key"] = secret_key;
+		
 		File configFile = SPIFFS.open("/config.json", "w");
 		if (!configFile)
 		{
 			Serial.println("failed to open config file for writing");
 		}
 
-		serializeJsonPretty(jsonBuffer, Serial);
-		serializeJson(jsonBuffer, configFile);
+		serializeJsonPretty(doc, Serial);
+		serializeJson(doc, configFile);
 		configFile.close();
 		// End save
 		shouldSaveConfig = false;
@@ -317,7 +349,6 @@ void loop()
 			}
 			delay(500);
 		}
-		// Free resources
 	}
 	else
 	{

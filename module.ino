@@ -127,7 +127,7 @@ void setupSpiffs()
 					strcpy(http_server, jsonBuffer["http_server"]);
 					strcpy(http_port, jsonBuffer["http_port"]);
 					strcpy(secret_key, jsonBuffer["secret_key"]);
-					strcpy(connection_string, jsonBuffer["connectionString"]);
+					strcpy(connection_string, jsonBuffer["connection_string"]);
 				}
 			}
 			else

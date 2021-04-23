@@ -184,7 +184,6 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 	memcpy(result, payLoad, size);
 	result[size] = '\0';
 	// Display Twin message
-
 	DeserializationError error = deserializeJson(doc, result);
 	if (error)
 	{
@@ -199,23 +198,24 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 
 		ReConnectWifi(newSsid, newPassword);
 	}
-	if (doc["desired"]["serviceConfig"]) {
-		Serial.println("Updating service");
-		File configFile = SPIFFS.open("/config.json");
-		if (configFile) {
-			size_t size = configFile.size();
-			std::unique_ptr<char[]> buf(new char[size]);
-			configFile.readBytes(buf.get(), size);
-			DynamicJsonDocument jsonBuffer(1024);
-			DeserializationError error = deserializeJson(jsonBuffer, buf.get());
+	File configFile = SPIFFS.open("/config.json");
+	if (configFile) {
+		size_t size = configFile.size();
+		std::unique_ptr<char[]> buf(new char[size]);
+		configFile.readBytes(buf.get(), size);
+		DynamicJsonDocument jsonBuffer(1024);
+		DeserializationError error = deserializeJson(jsonBuffer, buf.get());
+		if (doc["desired"]) {
 			jsonBuffer["service_id"] = doc["desired"]["serviceConfig"]["serviceId"];
 			jsonBuffer["gate"] = doc["desired"]["serviceConfig"]["gate"];
-			serializeJsonPretty(jsonBuffer, Serial);
-			configFile = SPIFFS.open("/config.json", "w");
-			serializeJson(jsonBuffer, configFile);
+		} else {
+			jsonBuffer["service_id"] = doc["serviceConfig"]["serviceId"];
+			jsonBuffer["gate"] = doc["serviceConfig"]["gate"];
 		}
-		configFile.close();
+		configFile = SPIFFS.open("/config.json", "w");
+		serializeJson(jsonBuffer, configFile);
 	}
+	configFile.close();
 	free(result);
 }
 

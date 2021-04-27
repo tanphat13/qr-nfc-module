@@ -47,12 +47,14 @@ const char *password = "chuoideptrai";
 Adafruit_PN532 nfc(PN532_SCK, PN532_MISO, PN532_MOSI, PN532_SS);
 WiFiManager wifiManager;
 
-char http_server[40] = "192.168.1.5";
-char http_port[6] = "3030";
-char secret_key[32] = "my_secret_key";
-char connection_string[255] = "HostName=thesis-hcmut.azure-devices.net;DeviceId=ZtEmS7opI;SharedAccessKey=+cec+kzcNnCZNpmmh6RKcOdyLo79Jf7hMqmxK4hz3sRxz/SFxGCcrd7LRw/WvMejhQeV6NtKgibBU4q9aLfsEw==";
-char serviceId[255];
-char gate[32];
+char http_server[10];
+char http_port[6];
+char secret_key[50];
+char connection_string[255];
+char serviceId[10];
+char serviceType[10];
+char gate;
+char deviceId[10];
 
 String qrCode;
 long lastReconnectAttempt = 0;
@@ -134,9 +136,12 @@ void setupSpiffs()
 					strcpy(http_port, jsonBuffer["http_port"]);
 					strcpy(secret_key, jsonBuffer["secret_key"]);
 					strcpy(connection_string, jsonBuffer["connection_string"]);
-					if (jsonBuffer["service_id"]) {
+					strcpy(deviceId, jsonBuffer["device_id"]);
+					if (jsonBuffer["service_id"])
+					{
+						strcpy(serviceType, jsonBuffer["service_type"]);
 						strcpy(serviceId, jsonBuffer["service_id"]);
-						strcpy(gate, jsonBuffer["gate"]);
+						gate = jsonBuffer["gate"];
 					}
 				}
 			}
@@ -199,16 +204,22 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 		ReConnectWifi(newSsid, newPassword);
 	}
 	File configFile = SPIFFS.open("/config.json");
-	if (configFile) {
+	if (configFile)
+	{
 		size_t size = configFile.size();
 		std::unique_ptr<char[]> buf(new char[size]);
 		configFile.readBytes(buf.get(), size);
 		DynamicJsonDocument jsonBuffer(1024);
 		DeserializationError error = deserializeJson(jsonBuffer, buf.get());
-		if (doc["desired"]) {
+		if (doc["desired"])
+		{
+			jsonBuffer["service_type"] = doc["desired"]["serviceConfig"]["serviceType"];
 			jsonBuffer["service_id"] = doc["desired"]["serviceConfig"]["serviceId"];
 			jsonBuffer["gate"] = doc["desired"]["serviceConfig"]["gate"];
-		} else {
+		}
+		else
+		{
+			jsonBuffer["service_type"] = doc["serviceConfig"]["serviceType"];
 			jsonBuffer["service_id"] = doc["serviceConfig"]["serviceId"];
 			jsonBuffer["gate"] = doc["serviceConfig"]["gate"];
 		}
@@ -221,8 +232,9 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 
 // MessageCallback log the feedback after sent message to server
 
-static void MessageCallBack(const char *patload, int size)
+static void MessageCallBack(const char *payload, int size)
 {
+	Serial.println(payload);
 	// do some thing  after upload code
 }
 
@@ -353,7 +365,8 @@ void setup()
 			uint16_t serverPort = atoi(http_port);
 			String secretKey = String(secret_key);
 			String provisioning_connection_string = getProvisioningConnectionString(serverIp, serverPort, secretKey);
-			while (!provisioning_connection_string) delay(10);
+			while (!provisioning_connection_string)
+				delay(50);
 			Serial.print("Provisioning Connection String: ");
 			Serial.println(provisioning_connection_string);
 			DeserializationError error = deserializeJson(doc, provisioning_connection_string);

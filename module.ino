@@ -210,10 +210,13 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
     DynamicJsonDocument jsonBuffer(1024);
     DeserializationError error = deserializeJson(jsonBuffer, buf.get());
     if (doc["desired"]) {
+		jsonBuffer["serviceType"] = doc["desired"]["serviceConfig"]["serviceType"];
       jsonBuffer["service_id"] = doc["desired"]["serviceConfig"]["serviceId"];
       jsonBuffer["gate"] = doc["desired"]["serviceConfig"]["gate"];
     } else {
+	  jsonBuffer["serviceType"] = doc["serviceConfig"]["serviceType"];
       jsonBuffer["service_id"] = doc["serviceConfig"]["serviceId"];
+	  strcpy(serviceType, doc["serviceConfig"]["serviceType"]);
       strcpy(serviceId , doc['serviceConfig']["serviceId"]);
       jsonBuffer["gate"] = doc["serviceConfig"]["gate"];
     }

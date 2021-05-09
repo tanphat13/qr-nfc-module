@@ -41,8 +41,6 @@ extern "C"
 
 uint32_t chipId = 0;
 char espChipId[16];
-const char *ssid = "iPhone";
-const char *password = "chuoideptrai";
 
 Adafruit_PN532 nfc(PN532_SCK, PN532_MISO, PN532_MOSI, PN532_SS);
 WiFiManager wifiManager;
@@ -59,7 +57,6 @@ char deviceId[10];
 String qrCode;
 long lastReconnectAttempt = 0;
 bool shouldSaveConfig = false;
-bool buttonState = LOW;
 
 SoftwareSerial gtSerial(CO2_RX, CO2_TX);
 
@@ -67,41 +64,6 @@ void saveConfigCallback()
 {
 	Serial.println("Saving config...");
 	shouldSaveConfig = true;
-}
-
-void checkButton()
-{
-	if (debounceButton(buttonState) == HIGH && buttonState == LOW)
-	{
-		Serial.println("Starting config portal");
-		wifiManager.setSaveConfigCallback(saveConfigCallback);
-		wifiManager.setConfigPortalTimeout(120);
-		buttonState = HIGH;
-		if (!wifiManager.startConfigPortal(espChipId, "12345678"))
-		{
-			Serial.println("failed to connect or hit timeout");
-			ESP.restart();
-		}
-		else
-		{
-			wifiManager.autoConnect();
-		}
-	}
-	else if (debounceButton(buttonState) == LOW && buttonState == HIGH)
-	{
-		buttonState = LOW;
-	}
-}
-
-bool debounceButton(bool state)
-{
-	bool stateNow = digitalRead(BUTTON);
-	if (state != stateNow)
-	{
-		delay(10);
-		stateNow = digitalRead(BUTTON);
-	}
-	return stateNow;
 }
 
 void setupSpiffs()
@@ -132,9 +94,6 @@ void setupSpiffs()
 				if (!error)
 				{
 					Serial.println("\nparsed json");
-					strcpy(http_server, jsonBuffer["http_server"]);
-					strcpy(http_port, jsonBuffer["http_port"]);
-					strcpy(secret_key, jsonBuffer["secret_key"]);
 					strcpy(connection_string, jsonBuffer["connection_string"]);
 					strcpy(deviceId, jsonBuffer["device_id"]);
 					if (jsonBuffer["service_id"])
@@ -165,7 +124,7 @@ void setupSpiffs()
 void SendMessage(char const *payload)
 {
 	EVENT_INSTANCE *message = Esp32MQTTClient_Event_Generate(payload, MESSAGE);
-	Esp32MQTTClient_Event_AddProp(message, "service", serviceId);
+	Esp32MQTTClient_Event_AddProp(message, "serviceType", serviceType);
 	Esp32MQTTClient_SendEventInstance(message);
 }
 
@@ -213,15 +172,21 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 		DeserializationError error = deserializeJson(jsonBuffer, buf.get());
 		if (doc["desired"])
 		{
-			jsonBuffer["service_type"] = doc["desired"]["serviceConfig"]["serviceType"];
-			jsonBuffer["service_id"] = doc["desired"]["serviceConfig"]["serviceId"];
+			jsonBuffer["service_type"] = doc["desired"]["serviceConfig"]["service_type"];
+			jsonBuffer["service_id"] = doc["desired"]["serviceConfig"]["service_id"];
 			jsonBuffer["gate"] = doc["desired"]["serviceConfig"]["gate"];
+			strcpy(serviceType, doc["desired"]["serviceConfig"]["service_type"]);
+			strcpy(serviceId, doc["desired"]["serviceConfig"]["service_id"]);
+			gate = doc["desired"]["serviceConfig"]["gate"];
 		}
 		else
 		{
-			jsonBuffer["service_type"] = doc["serviceConfig"]["serviceType"];
-			jsonBuffer["service_id"] = doc["serviceConfig"]["serviceId"];
+			jsonBuffer["service_type"] = doc["serviceConfig"]["service_type"];
+			jsonBuffer["service_id"] = doc["serviceConfig"]["service_id"];
 			jsonBuffer["gate"] = doc["serviceConfig"]["gate"];
+			strcpy(serviceType, doc["serviceConfig"]["service_type"]);
+			strcpy(serviceId, doc["serviceConfig"]["service_id"]);
+			gate = doc["serviceConfig"]["gate"];
 		}
 		configFile = SPIFFS.open("/config.json", "w");
 		serializeJson(jsonBuffer, configFile);
@@ -235,7 +200,15 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 static void MessageCallBack(const char *payload, int size)
 {
 	Serial.println(payload);
-	// do some thing  after upload code
+	//  char *result = (char *)malloc(size + 1);
+	//  if (result == NULL)
+	//  {
+	//    return;
+	//  }
+	//  memcpy(result, payload, size);
+	//  result[size] = '\0';
+	//  Serial.println(result);
+	//  free(result);
 }
 
 //end
@@ -266,27 +239,9 @@ String getProvisioningConnectionString(String serverIp, uint16_t serverPort, Str
 	return connectionString;
 }
 
-int postDataToServer(String serverIp, uint16_t serverPort, String secretKey, String data)
-{
-
-	HTTPClient http;
-	bool serverStatus = http.begin(serverIp, serverPort, "/identification");
-	http.addHeader("Content-Type", "application/json");
-	http.addHeader("secret_key", secretKey);
-
-	DynamicJsonDocument doc(1024);
-	doc["customerCode"] = data;
-	doc["moduleId"] = "esp-32-86-31";
-
-	String requestBody;
-	serializeJson(doc, requestBody);
-	int httpResponse = http.POST(requestBody);
-	http.end();
-	return httpResponse;
-}
-
 void setup()
 {
+
 	// put your setup code here, to run once:
 	WiFi.mode(WIFI_STA);
 	Serial.begin(115200);
@@ -294,7 +249,6 @@ void setup()
 	gtSerial.begin(9600);
 	while (!Serial)
 		delay(10);
-	pinMode(BUTTON, INPUT);
 
 	Serial.println("Hello!");
 
@@ -307,25 +261,25 @@ void setup()
 	Serial.print("ESP Chip ID: ");
 	Serial.println(chipId);
 
-	// nfc.begin();
+	nfc.begin();
 
-	// uint32_t versiondata = nfc.getFirmwareVersion();
-	// if (!versiondata)
-	// {
-	// 	Serial.print("Didn't find PN53x board");
-	// 	while (1)
-	// 		;
-	// }
+	uint32_t versiondata = nfc.getFirmwareVersion();
+	if (!versiondata)
+	{
+	 Serial.print("Didn't find PN53x board");
+	 while (1)
+	   ;
+	}
 
-	// Serial.print("Found chip PN53x");
-	// Serial.println((versiondata >> 24) & 0xFF, HEX);
-	// Serial.print("Firmware ver. ");
-	// Serial.print((versiondata >> 16) & 0xFF, DEC);
-	// Serial.print('.');
-	// Serial.println((versiondata >> 8) & 0xFF, DEC);
+	Serial.print("Found chip PN53x");
+	Serial.println((versiondata >> 24) & 0xFF, HEX);
+	Serial.print("Firmware ver. ");
+	Serial.print((versiondata >> 16) & 0xFF, DEC);
+	Serial.print('.');
+	Serial.println((versiondata >> 8) & 0xFF, DEC);
 
-	// nfc.setPassiveActivationRetries(0xFF);
-	// nfc.SAMConfig();
+	nfc.setPassiveActivationRetries(0xFF);
+	nfc.SAMConfig();
 
 	sprintf(espChipId, "%lu", chipId);
 
@@ -367,13 +321,11 @@ void setup()
 			String provisioning_connection_string = getProvisioningConnectionString(serverIp, serverPort, secretKey);
 			while (!provisioning_connection_string)
 				delay(50);
+			String connectionString = String(connection_string);
 			Serial.print("Provisioning Connection String: ");
 			Serial.println(provisioning_connection_string);
 			DeserializationError error = deserializeJson(doc, provisioning_connection_string);
 		}
-		doc["http_server"] = http_server;
-		doc["http_port"] = http_port;
-		doc["secret_key"] = secret_key;
 
 		File configFile = SPIFFS.open("/config.json", "w");
 		if (!configFile)
@@ -388,10 +340,7 @@ void setup()
 		shouldSaveConfig = false;
 	}
 
-	Serial.println(WiFi.localIP());
-
 	// Set up Azure IoTHub
-
 	Esp32MQTTClient_Init((const uint8_t *)connection_string, true);
 	if (!Esp32MQTTClient_Init((const uint8_t *)connection_string, true))
 	{
@@ -416,10 +365,6 @@ void loop()
 		uint8_t uid[] = {0, 0, 0, 0, 0, 0, 0};
 		uint8_t uidLength;
 
-		String serverIp = String(http_server);
-		uint16_t serverPort = atoi(http_port);
-		String secretKey = String(secret_key);
-
 		while (gtSerial.available() > 0)
 		{
 			char str = gtSerial.read();
@@ -428,7 +373,7 @@ void loop()
 				qrCode.trim();
 				Serial.println(qrCode);
 				Serial.println("reach here");
-				httpResponseCode = postDataToServer(serverIp, serverPort, secretKey, qrCode);
+				Serial.print(qrCode.c_str());
 				SendMessage(qrCode.c_str());
 				qrCode = "";
 				esp_task_wdt_reset();
@@ -440,41 +385,39 @@ void loop()
 			}
 		}
 
-		// success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, &uid[0], &uidLength, 500);
-		// if (success)
-		// {
-		// 	Serial.println("Found an ISO14443A card");
-		// 	Serial.print("  UID Length: ");
-		// 	Serial.print(uidLength, DEC);
-		// 	Serial.println(" bytes");
-		// 	Serial.print("  UID Value: ");
-		// 	nfc.PrintHex(uid, uidLength);
+		success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, &uid[0], &uidLength, 500);
+		if (success)
+		{
+			Serial.println("Found an ISO14443A card");
+			Serial.print("  UID Length: ");
+			Serial.print(uidLength, DEC);
+			Serial.println(" bytes");
+			Serial.print("  UID Value: ");
+			nfc.PrintHex(uid, uidLength);
 
-		// 	esp_task_wdt_reset();
-		// 	if (uidLength == 4)
-		// 	{
-		// 		// We probably have a Mifare Classic card ...
-		// 		uint32_t cardid = uid[0];
-		// 		cardid <<= 8;
-		// 		cardid |= uid[1];
-		// 		cardid <<= 8;
-		// 		cardid |= uid[2];
-		// 		cardid <<= 8;
-		// 		cardid |= uid[3];
-		// 		Serial.print("Seems to be a Mifare Classic card #");
-		// 		Serial.println(cardid);
-		// 		String cardIdAsString = String(cardid);
-		// 		SendMessage(cardIdAsString.c_str());
-		// 		httpResponseCode = postDataToServer(serverIp, serverPort, secretKey, cardIdAsString);
-		// 	}
+			esp_task_wdt_reset();
+			if (uidLength == 4)
+			{
+				// We probably have a Mifare Classic card ...
+				uint32_t cardid = uid[0];
+				cardid <<= 8;
+				cardid |= uid[1];
+				cardid <<= 8;
+				cardid |= uid[2];
+				cardid <<= 8;
+				cardid |= uid[3];
+				Serial.print("Seems to be a Mifare Classic card #");
+				Serial.println(cardid);
+				String cardIdAsString = String(cardid);
+				SendMessage(cardIdAsString.c_str());
+			}
 
-		// 	delay(500);
-		// }
+			delay(500);
+		}
 	}
 	else
 	{
 		Serial.println("WiFi Disconnected");
 		delay(5000);
 	}
-	checkButton();
 }

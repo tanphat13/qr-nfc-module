@@ -45,11 +45,11 @@ char espChipId[16];
 Adafruit_PN532 nfc(PN532_SCK, PN532_MISO, PN532_MOSI, PN532_SS);
 WiFiManager wifiManager;
 
-char http_server[10];
+char http_server[15];
 char http_port[6];
 char secret_key[50];
 char connection_string[255];
-char serviceId[10];
+char serviceName[10];
 char serviceType[10];
 char gate;
 char deviceId[10];
@@ -99,7 +99,7 @@ void setupSpiffs()
 					if (jsonBuffer["service_id"])
 					{
 						strcpy(serviceType, jsonBuffer["service_type"]);
-						strcpy(serviceId, jsonBuffer["service_id"]);
+						strcpy(serviceName, jsonBuffer["service__name"]);
 						gate = jsonBuffer["gate"];
 					}
 				}
@@ -125,6 +125,8 @@ void SendMessage(char const *payload)
 {
 	EVENT_INSTANCE *message = Esp32MQTTClient_Event_Generate(payload, MESSAGE);
 	Esp32MQTTClient_Event_AddProp(message, "serviceType", serviceType);
+	Esp32MQTTClient_Event_AddProp(message, "serviceName", serviceName);
+	Esp32MQTTClient_Event_AddProp(message, "gate", gate);
 	Esp32MQTTClient_SendEventInstance(message);
 }
 
@@ -173,19 +175,19 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 		if (doc["desired"])
 		{
 			jsonBuffer["service_type"] = doc["desired"]["serviceConfig"]["service_type"];
-			jsonBuffer["service_id"] = doc["desired"]["serviceConfig"]["service_id"];
+			jsonBuffer["service_name"] = doc["desired"]["serviceConfig"]["service_name"];
 			jsonBuffer["gate"] = doc["desired"]["serviceConfig"]["gate"];
 			strcpy(serviceType, doc["desired"]["serviceConfig"]["service_type"]);
-			strcpy(serviceId, doc["desired"]["serviceConfig"]["service_id"]);
+			strcpy(serviceName, doc["desired"]["serviceConfig"]["service_name"]);
 			gate = doc["desired"]["serviceConfig"]["gate"];
 		}
 		else
 		{
 			jsonBuffer["service_type"] = doc["serviceConfig"]["service_type"];
-			jsonBuffer["service_id"] = doc["serviceConfig"]["service_id"];
+			jsonBuffer["service_name"] = doc["serviceConfig"]["service_name"];
 			jsonBuffer["gate"] = doc["serviceConfig"]["gate"];
 			strcpy(serviceType, doc["serviceConfig"]["service_type"]);
-			strcpy(serviceId, doc["serviceConfig"]["service_id"]);
+			strcpy(serviceName, doc["serviceConfig"]["service_name"]);
 			gate = doc["serviceConfig"]["gate"];
 		}
 		configFile = SPIFFS.open("/config.json", "w");
@@ -318,9 +320,9 @@ void setup()
 			String serverIp = String(http_server);
 			uint16_t serverPort = atoi(http_port);
 			String secretKey = String(secret_key);
-			String provisioning_connection_string = getProvisioningConnectionString(serverIp, serverPort, secretKey);
-			while (!provisioning_connection_string)
-				delay(50);
+			String provisioning_connection_string = "";
+			while (provisioning_connection_string == "")
+				provisioning_connection_string = getProvisioningConnectionString(serverIp, serverPort, secretKey);
 			String connectionString = String(connection_string);
 			Serial.print("Provisioning Connection String: ");
 			Serial.println(provisioning_connection_string);
@@ -357,14 +359,10 @@ void loop()
 	// put your main code here, to run repeatedly:
 	if (WiFi.status() == WL_CONNECTED)
 	{
-		//    Serial.print(serviceId);
 		Esp32MQTTClient_Check();
-		String payload;
-		int httpResponseCode;
 		boolean success;
 		uint8_t uid[] = {0, 0, 0, 0, 0, 0, 0};
 		uint8_t uidLength;
-
 		while (gtSerial.available() > 0)
 		{
 			char str = gtSerial.read();
@@ -394,8 +392,6 @@ void loop()
 			Serial.println(" bytes");
 			Serial.print("  UID Value: ");
 			nfc.PrintHex(uid, uidLength);
-
-			esp_task_wdt_reset();
 			if (uidLength == 4)
 			{
 				// We probably have a Mifare Classic card ...
@@ -410,10 +406,10 @@ void loop()
 				Serial.println(cardid);
 				String cardIdAsString = String(cardid);
 				SendMessage(cardIdAsString.c_str());
+				esp_task_wdt_reset();
 			}
-
-			delay(500);
 		}
+		delay(500);
 	}
 	else
 	{

@@ -120,8 +120,16 @@ void setupSpiffs()
 /**
   This is section for integrating system with Azure IoTHub
 */
+static void SendConfirmationCallback(IOTHUB_CLIENT_CONFIRMATION_RESULT result)
+{
+  if (result == IOTHUB_CLIENT_CONFIRMATION_OK)
+  {
+    Serial.println("Send Confirmation Callback finished.");
+  }
+}
 
-void SendMessage(char const *payload)
+
+static void SendMessage(char const *payload)
 {
 	EVENT_INSTANCE *message = Esp32MQTTClient_Event_Generate(payload, MESSAGE);
 	Esp32MQTTClient_Event_AddProp(message, "serviceType", serviceType);
@@ -130,7 +138,7 @@ void SendMessage(char const *payload)
 	Esp32MQTTClient_SendEventInstance(message);
 }
 
-void ReConnectWifi(char const *newSsid, char const *newPassword)
+static void ReConnectWifi(char const *newSsid, char const *newPassword)
 {
 	Serial.print(newSsid);
 	Serial.print(newPassword);
@@ -351,6 +359,7 @@ void setup()
 
 	Esp32MQTTClient_SetDeviceTwinCallback(DeviceTwinCallback);
 	Esp32MQTTClient_SetMessageCallback(MessageCallBack);
+	Esp32MQTTClient_SetSendConfirmationCallback(SendConfirmationCallback);
 }
 
 void loop()

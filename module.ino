@@ -44,19 +44,13 @@ char espChipId[16];
 
 Adafruit_PN532 nfc(PN532_SCK, PN532_MISO, PN532_MOSI, PN532_SS);
 WiFiManager wifiManager;
+bool shouldSaveConfig = false;
 
-char http_server[15];
-char http_port[6];
-char secret_key[50];
 char connection_string[255];
 char serviceName[10];
 char serviceType[10];
-char gate;
+char gate[1];
 char deviceId[10];
-
-String qrCode;
-long lastReconnectAttempt = 0;
-bool shouldSaveConfig = false;
 
 SoftwareSerial gtSerial(CO2_RX, CO2_TX);
 
@@ -99,8 +93,8 @@ void setupSpiffs()
 					if (jsonBuffer["service_id"])
 					{
 						strcpy(serviceType, jsonBuffer["service_type"]);
-						strcpy(serviceName, jsonBuffer["service__name"]);
-						gate = jsonBuffer["gate"];
+						strcpy(serviceName, jsonBuffer["service_name"]);
+						strcpy(gate, jsonBuffer["gate"]);
 					}
 				}
 			}
@@ -121,16 +115,20 @@ void setupSpiffs()
   This is section for integrating system with Azure IoTHub
 */
 
-void SendMessage(char const *payload)
+void SendMessage(const char *payload)
 {
 	EVENT_INSTANCE *message = Esp32MQTTClient_Event_Generate(payload, MESSAGE);
+	Serial.println("Get here, no bug init message");
 	Esp32MQTTClient_Event_AddProp(message, "serviceType", serviceType);
+	Serial.println("Get here, no bug service type");
 	Esp32MQTTClient_Event_AddProp(message, "serviceName", serviceName);
+	Serial.println("Get here, no bug service name");
 	Esp32MQTTClient_Event_AddProp(message, "gate", gate);
+	Serial.println("Get here, bug on send");
 	Esp32MQTTClient_SendEventInstance(message);
 }
 
-void ReConnectWifi(char const *newSsid, char const *newPassword)
+void ReConnectWifi(const char *newSsid, const char *newPassword)
 {
 	Serial.print(newSsid);
 	Serial.print(newPassword);
@@ -179,7 +177,7 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 			jsonBuffer["gate"] = doc["desired"]["serviceConfig"]["gate"];
 			strcpy(serviceType, doc["desired"]["serviceConfig"]["service_type"]);
 			strcpy(serviceName, doc["desired"]["serviceConfig"]["service_name"]);
-			gate = doc["desired"]["serviceConfig"]["gate"];
+			strcpy(gate, doc["desired"]["serviceConfig"]["gate"]);
 		}
 		else
 		{
@@ -188,7 +186,7 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 			jsonBuffer["gate"] = doc["serviceConfig"]["gate"];
 			strcpy(serviceType, doc["serviceConfig"]["service_type"]);
 			strcpy(serviceName, doc["serviceConfig"]["service_name"]);
-			gate = doc["serviceConfig"]["gate"];
+			strcpy(gate, doc["serviceConfig"]["gate"]);
 		}
 		configFile = SPIFFS.open("/config.json", "w");
 		serializeJson(jsonBuffer, configFile);
@@ -255,6 +253,10 @@ void setup()
 	Serial.println("Hello!");
 
 	setupSpiffs();
+
+	char http_server[15];
+	char http_port[6];
+	char secret_key[50];
 
 	for (int i = 0; i < 17; i = i + 8)
 	{
@@ -360,7 +362,8 @@ void loop()
 	if (WiFi.status() == WL_CONNECTED)
 	{
 		Esp32MQTTClient_Check();
-		boolean success;
+		String qrCode;
+		// boolean success;
 		uint8_t uid[] = {0, 0, 0, 0, 0, 0, 0};
 		uint8_t uidLength;
 		while (gtSerial.available() > 0)
@@ -369,12 +372,9 @@ void loop()
 			if (str == 9)
 			{
 				qrCode.trim();
-				Serial.println(qrCode);
-				Serial.println("reach here");
-				Serial.print(qrCode.c_str());
 				SendMessage(qrCode.c_str());
 				qrCode = "";
-				esp_task_wdt_reset();
+//				esp_task_wdt_reset();
 				break;
 			}
 			else
@@ -383,8 +383,8 @@ void loop()
 			}
 		}
 
-		success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, &uid[0], &uidLength, 500);
-		if (success)
+		// success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, &uid[0], &uidLength, 500);
+		if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, &uid[0], &uidLength, 500))
 		{
 			Serial.println("Found an ISO14443A card");
 			Serial.print("  UID Length: ");
@@ -406,7 +406,7 @@ void loop()
 				Serial.println(cardid);
 				String cardIdAsString = String(cardid);
 				SendMessage(cardIdAsString.c_str());
-				esp_task_wdt_reset();
+//				esp_task_wdt_reset();
 			}
 		}
 		delay(500);

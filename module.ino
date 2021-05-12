@@ -114,21 +114,24 @@ void setupSpiffs()
 /**
   This is section for integrating system with Azure IoTHub
 */
+static void SendConfirmationCallback(IOTHUB_CLIENT_CONFIRMATION_RESULT result)
+{
+  if (result == IOTHUB_CLIENT_CONFIRMATION_OK)
+  {
+    Serial.println("Send Confirmation Callback finished.");
+  }
+}
 
-void SendMessage(const char *payload)
+static void SendMessage(const char *payload)
 {
 	EVENT_INSTANCE *message = Esp32MQTTClient_Event_Generate(payload, MESSAGE);
-	Serial.println("Get here, no bug init message");
 	Esp32MQTTClient_Event_AddProp(message, "serviceType", serviceType);
-	Serial.println("Get here, no bug service type");
 	Esp32MQTTClient_Event_AddProp(message, "serviceName", serviceName);
-	Serial.println("Get here, no bug service name");
 	Esp32MQTTClient_Event_AddProp(message, "gate", gate);
-	Serial.println("Get here, bug on send");
 	Esp32MQTTClient_SendEventInstance(message);
 }
 
-void ReConnectWifi(const char *newSsid, const char *newPassword)
+static void ReConnectWifi(char const *newSsid, char const *newPassword)
 {
 	Serial.print(newSsid);
 	Serial.print(newPassword);
@@ -162,15 +165,16 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 
 		ReConnectWifi(newSsid, newPassword);
 	}
-	File configFile = SPIFFS.open("/config.json");
-	if (configFile)
+	if (SPIFFS.exists("/config.json"))
 	{
+
+		File configFile = SPIFFS.open("/config.json", "r");
 		size_t size = configFile.size();
 		std::unique_ptr<char[]> buf(new char[size]);
 		configFile.readBytes(buf.get(), size);
 		DynamicJsonDocument jsonBuffer(1024);
 		DeserializationError error = deserializeJson(jsonBuffer, buf.get());
-		if (doc["desired"])
+		if (doc["desired"]["serviceConfig"])
 		{
 			jsonBuffer["service_type"] = doc["desired"]["serviceConfig"]["service_type"];
 			jsonBuffer["service_name"] = doc["desired"]["serviceConfig"]["service_name"];
@@ -179,7 +183,7 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 			strcpy(serviceName, doc["desired"]["serviceConfig"]["service_name"]);
 			strcpy(gate, doc["desired"]["serviceConfig"]["gate"]);
 		}
-		else
+		if (doc["serviceConfig"])
 		{
 			jsonBuffer["service_type"] = doc["serviceConfig"]["service_type"];
 			jsonBuffer["service_name"] = doc["serviceConfig"]["service_name"];
@@ -190,8 +194,8 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 		}
 		configFile = SPIFFS.open("/config.json", "w");
 		serializeJson(jsonBuffer, configFile);
+		configFile.close();
 	}
-	configFile.close();
 	free(result);
 }
 
@@ -290,9 +294,9 @@ void setup()
 	wifiManager.setSaveConfigCallback(saveConfigCallback);
 	wifiManager.setClass("invert");
 
-	WiFiManagerParameter custom_http_server("server", "http server", http_server, 40);
+	WiFiManagerParameter custom_http_server("server", "http server", http_server, 15);
 	WiFiManagerParameter custom_http_port("port", "http port", http_port, 6);
-	WiFiManagerParameter custom_secret_key("key", "secret key", secret_key, 40);
+	WiFiManagerParameter custom_secret_key("key", "secret key", secret_key, 50);
 
 	wifiManager.addParameter(&custom_http_server);
 	wifiManager.addParameter(&custom_http_port);
@@ -325,10 +329,10 @@ void setup()
 			String provisioning_connection_string = "";
 			while (provisioning_connection_string == "")
 				provisioning_connection_string = getProvisioningConnectionString(serverIp, serverPort, secretKey);
-			String connectionString = String(connection_string);
 			Serial.print("Provisioning Connection String: ");
 			Serial.println(provisioning_connection_string);
 			DeserializationError error = deserializeJson(doc, provisioning_connection_string);
+			strcpy(connection_string, doc["connection_string"]);
 		}
 
 		File configFile = SPIFFS.open("/config.json", "w");
@@ -353,6 +357,7 @@ void setup()
 
 	Esp32MQTTClient_SetDeviceTwinCallback(DeviceTwinCallback);
 	Esp32MQTTClient_SetMessageCallback(MessageCallBack);
+	Esp32MQTTClient_SetSendConfirmationCallback(SendConfirmationCallback);
 }
 
 void loop()
@@ -363,7 +368,7 @@ void loop()
 	{
 		Esp32MQTTClient_Check();
 		String qrCode;
-		// boolean success;
+		boolean success;
 		uint8_t uid[] = {0, 0, 0, 0, 0, 0, 0};
 		uint8_t uidLength;
 		while (gtSerial.available() > 0)
@@ -374,7 +379,7 @@ void loop()
 				qrCode.trim();
 				SendMessage(qrCode.c_str());
 				qrCode = "";
-//				esp_task_wdt_reset();
+				esp_task_wdt_reset();
 				break;
 			}
 			else
@@ -383,7 +388,7 @@ void loop()
 			}
 		}
 
-		// success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, &uid[0], &uidLength, 500);
+		success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, &uid[0], &uidLength, 500);
 		if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, &uid[0], &uidLength, 500))
 		{
 			Serial.println("Found an ISO14443A card");
@@ -406,7 +411,7 @@ void loop()
 				Serial.println(cardid);
 				String cardIdAsString = String(cardid);
 				SendMessage(cardIdAsString.c_str());
-//				esp_task_wdt_reset();
+				esp_task_wdt_reset();
 			}
 		}
 		delay(500);

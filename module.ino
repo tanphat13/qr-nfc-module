@@ -46,6 +46,9 @@ Adafruit_PN532 nfc(PN532_SCK, PN532_MISO, PN532_MOSI, PN532_SS);
 WiFiManager wifiManager;
 bool shouldSaveConfig = false;
 
+char http_server[15];
+char http_port[6];
+char secret_key[50];
 char connection_string[255];
 char serviceName[10];
 char serviceType[10];
@@ -90,7 +93,7 @@ void setupSpiffs()
 					Serial.println("\nparsed json");
 					strcpy(connection_string, jsonBuffer["connection_string"]);
 					strcpy(deviceId, jsonBuffer["device_id"]);
-					if (jsonBuffer["service_id"])
+					if (jsonBuffer["service_name"])
 					{
 						strcpy(serviceType, jsonBuffer["service_type"]);
 						strcpy(serviceName, jsonBuffer["service_name"]);
@@ -108,6 +111,7 @@ void setupSpiffs()
 	{
 		Serial.println("failed to mount FS");
 	}
+	Serial.println(serviceName);
 	//end read
 }
 
@@ -157,23 +161,25 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 		Serial.println(error.f_str());
 		return;
 	}
-	if (doc["wifiConfig"])
-	{
-		Serial.println("Have new config");
-		char const *newSsid = doc["desired"]["wifiConfig"]["ssid"];
-		char const *newPassword = doc["desired"]["wifiConfig"]["password"];
-
-		ReConnectWifi(newSsid, newPassword);
+	File configFile = SPIFFS.open("/config.json", "r");
+	size_t buf_size = configFile.size();
+	std::unique_ptr<char[]> buf(new char[buf_size]);
+	configFile.readBytes(buf.get(), buf_size);
+	DynamicJsonDocument jsonBuffer(1024);
+	error = deserializeJson(jsonBuffer, buf.get());
+	if (error) {
+		Serial.println(error.f_str());
+		return;
 	}
-	if (SPIFFS.exists("/config.json"))
-	{
+	if (doc["desired"]) {
+		if (doc["desired"]["wifiConfig"])
+		{
+			Serial.println("Have new config");
+			char const *newSsid = doc["desired"]["wifiConfig"]["ssid"];
+			char const *newPassword = doc["desired"]["wifiConfig"]["password"];
 
-		File configFile = SPIFFS.open("/config.json", "r");
-		size_t size = configFile.size();
-		std::unique_ptr<char[]> buf(new char[size]);
-		configFile.readBytes(buf.get(), size);
-		DynamicJsonDocument jsonBuffer(1024);
-		DeserializationError error = deserializeJson(jsonBuffer, buf.get());
+			ReConnectWifi(newSsid, newPassword);
+		}
 		if (doc["desired"]["serviceConfig"])
 		{
 			jsonBuffer["service_type"] = doc["desired"]["serviceConfig"]["service_type"];
@@ -182,6 +188,15 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 			strcpy(serviceType, doc["desired"]["serviceConfig"]["service_type"]);
 			strcpy(serviceName, doc["desired"]["serviceConfig"]["service_name"]);
 			strcpy(gate, doc["desired"]["serviceConfig"]["gate"]);
+		}
+	} else {
+		if (doc["wifiConfig"])
+		{
+			Serial.println("Have new config");
+			char const *newSsid = doc["wifiConfig"]["ssid"];
+			char const *newPassword = doc["wifiConfig"]["password"];
+
+			ReConnectWifi(newSsid, newPassword);
 		}
 		if (doc["serviceConfig"])
 		{
@@ -192,10 +207,10 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 			strcpy(serviceName, doc["serviceConfig"]["service_name"]);
 			strcpy(gate, doc["serviceConfig"]["gate"]);
 		}
-		configFile = SPIFFS.open("/config.json", "w");
-		serializeJson(jsonBuffer, configFile);
-		configFile.close();
 	}
+	configFile = SPIFFS.open("/config.json", "w");
+	serializeJson(jsonBuffer, configFile);
+	configFile.close();
 	free(result);
 }
 
@@ -254,13 +269,7 @@ void setup()
 	while (!Serial)
 		delay(10);
 
-	Serial.println("Hello!");
-
 	setupSpiffs();
-
-	char http_server[15];
-	char http_port[6];
-	char secret_key[50];
 
 	for (int i = 0; i < 17; i = i + 8)
 	{
@@ -410,6 +419,7 @@ void loop()
 				Serial.print("Seems to be a Mifare Classic card #");
 				Serial.println(cardid);
 				String cardIdAsString = String(cardid);
+				Serial.println(serviceType);
 				SendMessage(cardIdAsString.c_str());
 				esp_task_wdt_reset();
 			}

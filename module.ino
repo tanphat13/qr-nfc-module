@@ -40,7 +40,7 @@ extern "C"
 #define PN532_MISO (19)
 
 uint32_t chipId = 0;
-char espChipId[16];
+char espChipId[10];
 
 Adafruit_PN532 nfc(PN532_SCK, PN532_MISO, PN532_MOSI, PN532_SS);
 WiFiManager wifiManager;
@@ -51,7 +51,7 @@ char http_port[6];
 char secret_key[50];
 char connection_string[255];
 char serviceName[10];
-char serviceType[10];
+String serviceType;
 char gate[1];
 char deviceId[10];
 
@@ -85,7 +85,7 @@ void setupSpiffs()
 				std::unique_ptr<char[]> buf(new char[size]);
 
 				configFile.readBytes(buf.get(), size);
-				DynamicJsonDocument jsonBuffer(1024);
+				DynamicJsonDocument jsonBuffer(2048);
 				DeserializationError error = deserializeJson(jsonBuffer, buf.get());
 				serializeJsonPretty(jsonBuffer, Serial);
 				if (!error)
@@ -93,11 +93,15 @@ void setupSpiffs()
 					Serial.println("\nparsed json");
 					strcpy(connection_string, jsonBuffer["connection_string"]);
 					strcpy(deviceId, jsonBuffer["device_id"]);
-					if (jsonBuffer["service_name"])
+					if (jsonBuffer["service_type"] && jsonBuffer["service_name"])
 					{
-						strcpy(serviceType, jsonBuffer["service_type"]);
 						strcpy(serviceName, jsonBuffer["service_name"]);
+						serializeJson(jsonBuffer["service_type"], serviceType);
+						serviceType = serviceType.substring(1, serviceType.length() - 1);
 						strcpy(gate, jsonBuffer["gate"]);
+						Serial.println(serviceName);
+						Serial.println(serviceType);
+						Serial.println(gate);
 					}
 				}
 			}
@@ -111,7 +115,6 @@ void setupSpiffs()
 	{
 		Serial.println("failed to mount FS");
 	}
-	Serial.println(serviceName);
 	//end read
 }
 
@@ -128,8 +131,11 @@ static void SendConfirmationCallback(IOTHUB_CLIENT_CONFIRMATION_RESULT result)
 
 static void SendMessage(const char *payload)
 {
+	int str_len = serviceType.length() + 1;
+	char type[str_len];
+	serviceType.toCharArray(type, str_len);
 	EVENT_INSTANCE *message = Esp32MQTTClient_Event_Generate(payload, MESSAGE);
-	Esp32MQTTClient_Event_AddProp(message, "serviceType", serviceType);
+	Esp32MQTTClient_Event_AddProp(message, "serviceType", type);
 	Esp32MQTTClient_Event_AddProp(message, "serviceName", serviceName);
 	Esp32MQTTClient_Event_AddProp(message, "gate", gate);
 	Esp32MQTTClient_SendEventInstance(message);
@@ -182,10 +188,11 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 		}
 		if (doc["desired"]["serviceConfig"])
 		{
-			jsonBuffer["service_type"] = doc["desired"]["serviceConfig"]["service_type"];
 			jsonBuffer["service_name"] = doc["desired"]["serviceConfig"]["service_name"];
 			jsonBuffer["gate"] = doc["desired"]["serviceConfig"]["gate"];
-			strcpy(serviceType, doc["desired"]["serviceConfig"]["service_type"]);
+			jsonBuffer["service_type"] = doc["desired"]["serviceConfig"]["service_type"];
+			serializeJson(doc["desired"]["serviceConfig"]["service_type"], serviceType);
+			serviceType = serviceType.substring(1, serviceType.length() - 1);
 			strcpy(serviceName, doc["desired"]["serviceConfig"]["service_name"]);
 			strcpy(gate, doc["desired"]["serviceConfig"]["gate"]);
 		}
@@ -200,10 +207,11 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 		}
 		if (doc["serviceConfig"])
 		{
-			jsonBuffer["service_type"] = doc["serviceConfig"]["service_type"];
 			jsonBuffer["service_name"] = doc["serviceConfig"]["service_name"];
 			jsonBuffer["gate"] = doc["serviceConfig"]["gate"];
-			strcpy(serviceType, doc["serviceConfig"]["service_type"]);
+			jsonBuffer["service_type"] = doc["serviceConfig"]["service_type"];
+			serializeJson(doc["serviceConfig"]["service_type"], serviceType);
+			serviceType = serviceType.substring(1, serviceType.length() - 1);
 			strcpy(serviceName, doc["serviceConfig"]["service_name"]);
 			strcpy(gate, doc["serviceConfig"]["gate"]);
 		}
@@ -235,7 +243,7 @@ static void MessageCallBack(const char *payload, int size)
 String getProvisioningConnectionString(String serverIp, uint16_t serverPort, String secretKey)
 {
 	HTTPClient http;
-	bool serverStatus = http.begin(serverIp, serverPort, "/module/iot-hub-registration");
+	bool serverStatus = http.begin(serverIp, serverPort, "/api/modules/iot-hub-registration");
 	http.addHeader("secret_key", secretKey);
 
 	String connectionString = "";

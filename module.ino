@@ -46,14 +46,14 @@ Adafruit_PN532 nfc(PN532_SCK, PN532_MISO, PN532_MOSI, PN532_SS);
 WiFiManager wifiManager;
 bool shouldSaveConfig = false;
 
-char http_server[15];
+char http_server[16];
 char http_port[6];
 char secret_key[50];
-char connection_string[255];
-char serviceName[10];
-String serviceType;
-char gate[1];
-char deviceId[10];
+static char connection_string[255];
+static String serviceName;
+static String serviceType;
+static char gate[1];
+static char deviceId[10];
 
 SoftwareSerial gtSerial(CO2_RX, CO2_TX);
 
@@ -88,22 +88,17 @@ void setupSpiffs()
 				DynamicJsonDocument jsonBuffer(2048);
 				DeserializationError error = deserializeJson(jsonBuffer, buf.get());
 				serializeJsonPretty(jsonBuffer, Serial);
-				if (!error)
-				{
 					Serial.println("\nparsed json");
 					strcpy(connection_string, jsonBuffer["connection_string"]);
 					strcpy(deviceId, jsonBuffer["device_id"]);
 					if (jsonBuffer["service_type"] && jsonBuffer["service_name"])
 					{
-						strcpy(serviceName, jsonBuffer["service_name"]);
+						serializeJson(jsonBuffer["service_name"], serviceName);
+						serviceName = serviceName.substring(1, serviceName.length() - 1);
 						serializeJson(jsonBuffer["service_type"], serviceType);
 						serviceType = serviceType.substring(1, serviceType.length() - 1);
 						strcpy(gate, jsonBuffer["gate"]);
-						Serial.println(serviceName);
-						Serial.println(serviceType);
-						Serial.println(gate);
 					}
-				}
 			}
 			else
 			{
@@ -134,9 +129,12 @@ static void SendMessage(const char *payload)
 	int str_len = serviceType.length() + 1;
 	char type[str_len];
 	serviceType.toCharArray(type, str_len);
+	str_len = serviceName.length() + 1;
+	char name[str_len];
+	serviceName.toCharArray(name, str_len);
 	EVENT_INSTANCE *message = Esp32MQTTClient_Event_Generate(payload, MESSAGE);
 	Esp32MQTTClient_Event_AddProp(message, "serviceType", type);
-	Esp32MQTTClient_Event_AddProp(message, "serviceName", serviceName);
+	Esp32MQTTClient_Event_AddProp(message, "serviceName", name);
 	Esp32MQTTClient_Event_AddProp(message, "gate", gate);
 	Esp32MQTTClient_SendEventInstance(message);
 }
@@ -193,7 +191,9 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 			jsonBuffer["service_type"] = doc["desired"]["serviceConfig"]["service_type"];
 			serializeJson(doc["desired"]["serviceConfig"]["service_type"], serviceType);
 			serviceType = serviceType.substring(1, serviceType.length() - 1);
-			strcpy(serviceName, doc["desired"]["serviceConfig"]["service_name"]);
+			serializeJson(doc["service_name"], serviceName);
+			serviceName = serviceName.substring(1, serviceName.length() - 1);
+
 			strcpy(gate, doc["desired"]["serviceConfig"]["gate"]);
 		}
 	} else {
@@ -212,7 +212,9 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 			jsonBuffer["service_type"] = doc["serviceConfig"]["service_type"];
 			serializeJson(doc["serviceConfig"]["service_type"], serviceType);
 			serviceType = serviceType.substring(1, serviceType.length() - 1);
-			strcpy(serviceName, doc["serviceConfig"]["service_name"]);
+			serializeJson(doc["service_name"], serviceName);
+			serviceName = serviceName.substring(1, serviceName.length() - 1);
+
 			strcpy(gate, doc["serviceConfig"]["gate"]);
 		}
 	}
@@ -338,7 +340,7 @@ void setup()
 		Serial.println("saving config");
 		DynamicJsonDocument doc(1024);
 
-		if (connection_string[0] == '\0')
+		if (strlen(connection_string) == 0)
 		{
 			String serverIp = String(http_server);
 			uint16_t serverPort = atoi(http_port);
@@ -350,17 +352,17 @@ void setup()
 			Serial.println(provisioning_connection_string);
 			DeserializationError error = deserializeJson(doc, provisioning_connection_string);
 			strcpy(connection_string, doc["connection_string"]);
-		}
 
-		File configFile = SPIFFS.open("/config.json", "w");
-		if (!configFile)
-		{
-			Serial.println("failed to open config file for writing");
-		}
+			File configFile = SPIFFS.open("/config.json", "w");
+			if (!configFile)
+			{
+				Serial.println("failed to open config file for writing");
+			}
 
-		serializeJsonPretty(doc, Serial);
-		serializeJson(doc, configFile);
-		configFile.close();
+			serializeJsonPretty(doc, Serial);
+			serializeJson(doc, configFile);
+			configFile.close();
+		}
 		// End save
 		shouldSaveConfig = false;
 	}

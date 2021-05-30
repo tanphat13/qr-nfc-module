@@ -276,8 +276,6 @@ void setup()
 	Serial.begin(115200);
 	// Software serial port
 	gtSerial.begin(9600);
-	while (!Serial)
-		delay(10);
 
 	setupSpiffs();
 

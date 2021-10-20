@@ -50,8 +50,8 @@ char http_server[16];
 char http_port[6];
 char secret_key[50];
 static char connection_string[255];
-static String serviceName;
-static String serviceType;
+String serviceName;
+String serviceType;
 static char gate[1];
 static char deviceId[10];
 
@@ -129,6 +129,7 @@ static void SendMessage(const char *payload)
 	int str_len = serviceType.length() + 1;
 	char type[str_len];
 	serviceType.toCharArray(type, str_len);
+	Serial.println(type);
 	str_len = serviceName.length() + 1;
 	char name[str_len];
 	serviceName.toCharArray(name, str_len);
@@ -193,7 +194,6 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 			serviceType = serviceType.substring(1, serviceType.length() - 1);
 			serializeJson(doc["service_name"], serviceName);
 			serviceName = serviceName.substring(1, serviceName.length() - 1);
-
 			strcpy(gate, doc["desired"]["serviceConfig"]["gate"]);
 		}
 	} else {
@@ -214,7 +214,6 @@ static void DeviceTwinCallback(DEVICE_TWIN_UPDATE_STATE updateState, const unsig
 			serviceType = serviceType.substring(1, serviceType.length() - 1);
 			serializeJson(doc["service_name"], serviceName);
 			serviceName = serviceName.substring(1, serviceName.length() - 1);
-
 			strcpy(gate, doc["serviceConfig"]["gate"]);
 		}
 	}
@@ -395,6 +394,7 @@ void loop()
 			{
 				qrCode.trim();
 				SendMessage(qrCode.c_str());
+				Serial.println(qrCode);
 				qrCode = "";
 				esp_task_wdt_reset();
 				break;
@@ -406,7 +406,7 @@ void loop()
 		}
 
 		success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, &uid[0], &uidLength, 500);
-		if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, &uid[0], &uidLength, 500))
+		if (success)
 		{
 			Serial.println("Found an ISO14443A card");
 			Serial.print("  UID Length: ");
@@ -416,7 +416,6 @@ void loop()
 			nfc.PrintHex(uid, uidLength);
 			if (uidLength == 4)
 			{
-				// We probably have a Mifare Classic card ...
 				uint32_t cardid = uid[0];
 				cardid <<= 8;
 				cardid |= uid[1];
